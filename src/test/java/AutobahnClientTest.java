@@ -125,23 +125,33 @@ public class AutobahnClientTest extends WebSocketClient {
 		} catch ( IOException e ) {
 			e.printStackTrace(); // for System.in reader
 		}
-		System.exit( 0 );
+		System.exit(0);
 	}
 
 	@Override
 	public void onMessage( String message ) {
-		send( message );
+		send(message);
 	}
 
 	@Override
 	public void onMessage( ByteBuffer blob ) {
+		getConnection().send(blob);
+	}
+
+	@Override
+	public void onMessageBinary( ByteBuffer blob ) {
 		getConnection().send( blob );
 	}
+
 
 	@Override
 	public void onError( Exception ex ) {
 		System.out.println( "Error: " );
 		ex.printStackTrace();
+	}
+
+	@Override
+	public void onPong() {
 	}
 
 	@Override

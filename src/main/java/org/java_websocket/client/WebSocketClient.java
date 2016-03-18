@@ -1,5 +1,6 @@
 package org.java_websocket.client;
 
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -24,6 +25,13 @@ import org.java_websocket.framing.Framedata.Opcode;
 import org.java_websocket.handshake.HandshakeImpl1Client;
 import org.java_websocket.handshake.Handshakedata;
 import org.java_websocket.handshake.ServerHandshake;
+import org.java_websocket.framing.FramedataImpl1;
+import org.java_websocket.framing.Framedata.Opcode;
+import org.java_websocket.framing.Framedata;
+
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
+
 
 /**
  * A subclass must implement at least <var>onOpen</var>, <var>onClose</var>, and <var>onMessage</var> to be
@@ -72,6 +80,10 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 		this( serverUri, draft, null, 0 );
 	}
 
+	public WebSocketClient( URI serverUri, Draft draft, int connectTimeout) {
+	    this( serverUri, draft, null, connectTimeout);
+	}
+	
 	public WebSocketClient( URI serverUri , Draft protocolDraft , Map<String,String> httpHeaders , int connectTimeout ) {
 		if( serverUri == null ) {
 			throw new IllegalArgumentException();
@@ -142,7 +154,7 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 	 *            The string which will be transmitted.
 	 */
 	public void send( String text ) throws NotYetConnectedException {
-		engine.send( text );
+		engine.send(text);
 	}
 
 	/**
@@ -151,11 +163,24 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 	 * @param data
 	 *            The byte-Array of data to send to the WebSocket server.
 	 */
-	public void send( byte[] data ) throws NotYetConnectedException {
+	public void sendBinary( byte[] data ) throws NotYetConnectedException {
 		engine.send( data );
 	}
 
-	public void run() {
+    public void send( byte[] data ) throws NotYetConnectedException {
+        engine.send( data );
+    }
+
+    /**
+	 * Sends a websocket ping to the connected webSocket server.
+	 */
+	public void sendPing() throws NotYetConnectedException {
+		FramedataImpl1 frame = new FramedataImpl1(Opcode.PING);
+        frame.setFin(true);
+        engine.sendFrame(frame);
+	}
+
+    public void run() {
 		try {
 			if( socket == null ) {
 				socket = new Socket( proxy );
@@ -181,7 +206,7 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 		int readBytes;
 
 		try {
-			while ( !isClosed() && ( readBytes = istream.read( rawbuffer ) ) != -1 ) {
+			while ( !isClosing() && !isClosed() && ( readBytes = istream.read( rawbuffer ) ) != -1 ) {
 				engine.decode( ByteBuffer.wrap( rawbuffer, 0, readBytes ) );
 			}
 			engine.eot();
@@ -194,6 +219,7 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 		}
 		assert ( socket.isClosed() );
 	}
+
 	private int getPort() {
 		int port = uri.getPort();
 		if( port == -1 ) {
@@ -203,7 +229,7 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 			} else if( scheme.equals( "ws" ) ) {
 				return WebSocket.DEFAULT_PORT;
 			} else {
-				throw new RuntimeException( "unkonow scheme" + scheme );
+				throw new RuntimeException( "unknown scheme" + scheme );
 			}
 		}
 		return port;
@@ -239,6 +265,10 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 	public READYSTATE getReadyState() {
 		return engine.getReadyState();
 	}
+	
+	public int getState() {
+	  return engine.getReadyState().ordinal();
+	}
 
 	/**
 	 * Calls subclass' implementation of <var>onMessage</var>.
@@ -250,12 +280,17 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 
 	@Override
 	public final void onWebsocketMessage( WebSocket conn, ByteBuffer blob ) {
-		onMessage( blob );
+		onMessageBinary(blob);
 	}
 
 	@Override
 	public void onWebsocketMessageFragment( WebSocket conn, Framedata frame ) {
-		onFragment( frame );
+		onFragment(frame);
+	}
+
+    @Override
+	public void onWebsocketPong( WebSocket conn, Framedata f ) {
+		onPong();
 	}
 
 	/**
@@ -264,7 +299,7 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 	@Override
 	public final void onWebsocketOpen( WebSocket conn, Handshakedata handshake ) {
 		connectLatch.countDown();
-		onOpen( (ServerHandshake) handshake );
+		onOpen((ServerHandshake) handshake);
 	}
 
 	/**
@@ -282,7 +317,7 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 		} catch ( IOException e ) {
 			onWebsocketError( this, e );
 		}
-		onClose( code, reason, remote );
+		onClose(code, reason, remote);
 	}
 
 	/**
@@ -290,7 +325,7 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 	 */
 	@Override
 	public final void onWebsocketError( WebSocket conn, Exception ex ) {
-		onError( ex );
+        onError(ex);
 	}
 
 	@Override
@@ -300,7 +335,7 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 
 	@Override
 	public void onWebsocketCloseInitiated( WebSocket conn, int code, String reason ) {
-		onCloseInitiated( code, reason );
+		onCloseInitiated(code, reason);
 	}
 
 	@Override
@@ -332,15 +367,15 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 		return null;
 	}
 
-	// ABTRACT METHODS /////////////////////////////////////////////////////////
+	// ABSTRACT METHODS /////////////////////////////////////////////////////////
 	public abstract void onOpen( ServerHandshake handshakedata );
 	public abstract void onMessage( String message );
+	public abstract void onMessageBinary (ByteBuffer bytes);
 	public abstract void onClose( int code, String reason, boolean remote );
 	public abstract void onError( Exception ex );
-	public void onMessage( ByteBuffer bytes ) {
-	}
-	public void onFragment( Framedata frame ) {
-	}
+	public abstract void onPong();
+	public void onFragment( Framedata frame ) {	}
+    public void onMessage(ByteBuffer bytes) { }
 
 	private class WebsocketWriteThread implements Runnable {
 		@Override
@@ -358,6 +393,17 @@ public abstract class WebSocketClient extends WebSocketAdapter implements Runnab
 				// this thread is regularly terminated via an interrupt
 			}
 		}
+	}
+
+	public void setupSSL() {
+	    try {
+	        SSLContext sslContext = SSLContext.getInstance( "TLS" );
+    		sslContext.init( null, null, null );
+    		SSLSocketFactory factory = sslContext.getSocketFactory();
+            this.setSocket( factory.createSocket() );
+        } catch ( Exception e) {
+            // Do nothing
+        }
 	}
 
 	public void setProxy( Proxy proxy ) {
